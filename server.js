@@ -1,3 +1,4 @@
+// server.js
 // Simple backend for the HappyRobot inbound carrier sales POC
 
 import fs from "fs";
@@ -79,32 +80,72 @@ function pushCallback(rec) {
 function onlyDigits(s = "") {
   return String(s || "").replace(/\D/g, "");
 }
-function containsIgnoreCase(hay, needle) {
-  if (!needle) return true;
-  if (!hay) return false;
-  return hay.toLowerCase().includes(String(needle).toLowerCase());
-}
 function toNumber(val, fallback = 0) {
   const n = Number(val);
   return Number.isFinite(n) ? n : fallback;
 }
 
+// Map full state names to two letter codes
+const STATE_MAP = {
+  alabama: "AL", alaska: "AK", arizona: "AZ", arkansas: "AR", california: "CA",
+  colorado: "CO", connecticut: "CT", delaware: "DE", florida: "FL", georgia: "GA",
+  hawaii: "HI", idaho: "ID", illinois: "IL", indiana: "IN", iowa: "IA", kansas: "KS",
+  kentucky: "KY", louisiana: "LA", maine: "ME", maryland: "MD", massachusetts: "MA",
+  michigan: "MI", minnesota: "MN", mississippi: "MS", missouri: "MO", montana: "MT",
+  nebraska: "NE", nevada: "NV", "new hampshire": "NH", "new jersey": "NJ",
+  "new mexico": "NM", "new york": "NY", "north carolina": "NC", "north dakota": "ND",
+  ohio: "OH", oklahoma: "OK", oregon: "OR", pennsylvania: "PA", "rhode island": "RI",
+  "south carolina": "SC", "south dakota": "SD", tennessee: "TN", texas: "TX",
+  utah: "UT", vermont: "VT", virginia: "VA", washington: "WA",
+  "west virginia": "WV", wisconsin: "WI", wyoming: "WY"
+};
+
+// Normalize places like "Dallas, Texas" -> "dallas, tx"
+function normalizePlace(s = "") {
+  let x = String(s).toLowerCase().trim();
+  x = x.replace(/[.,]/g, " ");
+  x = x.replace(/\s+/g, " ");
+  for (const [name, abbr] of Object.entries(STATE_MAP)) {
+    x = x.replace(new RegExp(`\\b${name}\\b`, "g"), abbr.toLowerCase());
+  }
+  return x;
+}
+// Use the city token to help match "Dallas" vs "Dallas, TX"
+function cityToken(s = "") {
+  return String(s).split(",")[0].trim().toLowerCase();
+}
+function placeMatch(a = "", b = "") {
+  if (!b) return true;
+  const na = normalizePlace(a);
+  const nb = normalizePlace(b);
+  if (na === nb) return true;
+  const ca = cityToken(a), cb = cityToken(b);
+  return ca === cb || na.includes(cb) || nb.includes(ca);
+}
+function equipMatch(a = "", b = "") {
+  if (!b) return true;
+  const map = { "dry van": "dry van", van: "dry van", reefer: "reefer", refrigerated: "reefer", flatbed: "flatbed" };
+  const na = map[String(a || "").toLowerCase()] || String(a || "").toLowerCase();
+  const nb = map[String(b || "").toLowerCase()] || String(b || "").toLowerCase();
+  return na === nb;
+}
+
 // ---------- routes ----------
 
 app.get("/health", (req, res) => {
-  return res.json({ ok: true, status: "up", version: "1.1.0" });
+  return res.json({ ok: true, status: "up", version: "1.2.0" });
 });
 
 /**
  * GET /carrier/eligibility?mc=123456
- * Looks up FMCSA QCMobile by docket (MC). If FMCSA is unreachable or missing,
- * returns a safe fallback so the demo can proceed.
+ * Accepts mc or mc_number. Calls FMCSA QCMobile.
  */
 app.get("/carrier/eligibility", async (req, res) => {
-  const mc = onlyDigits(req.query.mc);
+  const mc = onlyDigits(
+    req.query.mc || req.query.mc_number || req.body?.mc || req.body?.mc_number
+  );
   if (!mc) return res.status(400).json({ ok: false, error: "mc required" });
 
-  // No webKey -> soft pass for demo
   if (!FMCSA_WEBKEY) {
     return res.json({
       ok: true,
@@ -119,31 +160,23 @@ app.get("/carrier/eligibility", async (req, res) => {
   }
 
   try {
-    const url = `https://mobile.fmcsa.dot.gov/qc/services/carriers/docket-number/${mc}?webKey=${encodeURIComponent(
-      FMCSA_WEBKEY
-    )}`;
+    const url = `https://mobile.fmcsa.dot.gov/qc/services/carriers/docket-number/${mc}?webKey=${encodeURIComponent(FMCSA_WEBKEY)}`;
     const r = await fetch(url, { headers: { accept: "application/json" } });
     if (!r.ok) throw new Error(`FMCSA ${r.status}`);
     const data = await r.json();
 
-    // Your sample shows: { content: [ { carrier: { ... } } ] }
-    const content = Array.isArray(data?.content)
-      ? data.content[0]
-      : data?.content || data;
-
+    // QCMobile sample shape: { content: [ { carrier: {...} } ] }
+    const content = Array.isArray(data?.content) ? data.content[0] : data?.content || data;
     const c = content?.carrier || content || {};
 
     const legalName = c.legalName || c.dbaName || null;
     const dotNumber = c.dotNumber || c.usdot || null;
 
-    // Map authority. StatusCode "A" = active, "I" = inactive.
     const statusCode = String(c.statusCode || "").toUpperCase();
     const authority =
-      statusCode === "A"
-        ? "active"
-        : statusCode === "I"
-        ? "inactive"
-        : statusCode || null;
+      statusCode === "A" ? "active" :
+      statusCode === "I" ? "inactive" :
+      statusCode || null;
 
     const allowed = String(c.allowedToOperate || "").toUpperCase() === "Y";
     const oos =
@@ -183,20 +216,19 @@ app.get("/carrier/eligibility", async (req, res) => {
 /**
  * POST /loads/search
  * Body: { origin, destination, pickup_datetime, equipment_type }
- * Returns top 3 by board rate.
+ * Fuzzy match cities and state names vs abbreviations.
  */
 app.post("/loads/search", (req, res) => {
   const { origin, destination, pickup_datetime, equipment_type } = req.body || {};
   const loads = readLoads();
 
   const filtered = loads
-    .filter(
-      (l) =>
-        containsIgnoreCase(l.origin, origin) &&
-        containsIgnoreCase(l.destination, destination) &&
-        (!equipment_type ||
-          String(l.equipment_type).toLowerCase() ===
-            String(equipment_type).toLowerCase())
+    .filter(l =>
+      placeMatch(l.origin, origin) &&
+      placeMatch(l.destination, destination) &&
+      equipMatch(l.equipment_type, equipment_type)
+      // If you want to force same pickup date, uncomment:
+      // && (!pickup_datetime || String(l.pickup_datetime).slice(0,10) === String(pickup_datetime).slice(0,10))
     )
     .sort((a, b) => toNumber(b.loadboard_rate) - toNumber(a.loadboard_rate))
     .slice(0, 3);
@@ -207,22 +239,20 @@ app.post("/loads/search", (req, res) => {
 /**
  * POST /negotiate
  * Body: { load_id, carrier_offer_usd }
- * Returns { decision, price, notes }
  */
 app.post("/negotiate", (req, res) => {
   const { load_id, carrier_offer_usd } = req.body || {};
   if (!load_id) return res.status(400).json({ ok: false, error: "load_id required" });
 
   const loads = readLoads();
-  const load = loads.find((l) => l.load_id === load_id);
+  const load = loads.find(l => l.load_id === load_id);
   if (!load) return res.status(404).json({ ok: false, error: "load not found" });
 
   const board = toNumber(load.loadboard_rate, 0);
   const offer = toNumber(carrier_offer_usd, 0);
 
-  // Simple pricing rules
-  const minAccept = Math.round(board * 0.95);  // accept if >= 95% of board
-  const walkAway = Math.round(board * 0.88);   // reject below this
+  const minAccept = Math.round(board * 0.95);
+  const walkAway = Math.round(board * 0.88);
   let decision = "counter";
   let price = Math.max(minAccept, Math.round((board + offer) / 2));
 
@@ -234,26 +264,23 @@ app.post("/negotiate", (req, res) => {
     price = walkAway;
   }
 
-  return res.json({
-    ok: true,
-    decision,
-    price,
-    notes: { board, minAccept, walkAway }
-  });
+  return res.json({ ok: true, decision, price, notes: { board, minAccept, walkAway } });
 });
 
 /**
  * POST /call/callback
- * Body: full payload from your workflow
- * Stores payload for metrics
+ * Stores payload for metrics. Parses transcript if it is a string.
  */
 app.post("/call/callback", (req, res) => {
   const payload = req.body || {};
+  let transcript = payload.transcript;
+  try { if (typeof transcript === "string") transcript = JSON.parse(transcript); } catch {}
   const record = {
     id: randomUUID(),
     at: new Date().toISOString(),
     source: "happyrobot",
-    ...payload
+    ...payload,
+    transcript
   };
   const count = pushCallback(record);
   return res.json({ ok: true, stored: true, count, id: record.id });
@@ -261,8 +288,7 @@ app.post("/call/callback", (req, res) => {
 
 /**
  * POST /notify/rep
- * Body: { room_name, summary, agreed_price }
- * No Slack. Just logs for demo.
+ * Demo logger
  */
 app.post("/notify/rep", (req, res) => {
   const { room_name, summary, agreed_price } = req.body || {};
@@ -272,7 +298,6 @@ app.post("/notify/rep", (req, res) => {
 
 /**
  * GET /metrics/local
- * Simple stats from stored callbacks
  */
 app.get("/metrics/local", (req, res) => {
   const arr = JSON.parse(fs.readFileSync(CALLBACKS_FILE, "utf8"));
