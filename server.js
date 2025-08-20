@@ -100,7 +100,7 @@ const STATE_MAP = {
   "west virginia": "WV", wisconsin: "WI", wyoming: "WY"
 };
 
-// Normalize places like "Dallas, Texas" -> "dallas, tx"
+// Normalize places like "Dallas, Texas" -> "dallas tx"
 function normalizePlace(s = "") {
   let x = String(s).toLowerCase().trim();
   x = x.replace(/[.,]/g, " ");
@@ -133,7 +133,7 @@ function equipMatch(a = "", b = "") {
 // ---------- routes ----------
 
 app.get("/health", (req, res) => {
-  return res.json({ ok: true, status: "up", version: "1.2.0" });
+  return res.json({ ok: true, status: "up", version: "1.3.0" });
 });
 
 /**
@@ -237,6 +237,20 @@ app.post("/loads/search", (req, res) => {
 });
 
 /**
+ * Normalize ASR price errors like "20100" when board is ~2200.
+ * If board is in a typical range and offer/10 is close to board, snap to offer/10.
+ */
+function normalizeOffer(offer, board) {
+  if (!Number.isFinite(offer) || !Number.isFinite(board)) return offer;
+  if (board >= 800 && board <= 6000 && offer >= 10000) {
+    const tenX = Math.round(offer / 10);
+    const withinRange = Math.abs(tenX - board) <= board * 0.5; // within ±50% of board
+    if (withinRange) return tenX;
+  }
+  return offer;
+}
+
+/**
  * POST /negotiate
  * Body: { load_id, carrier_offer_usd }
  */
@@ -249,7 +263,8 @@ app.post("/negotiate", (req, res) => {
   if (!load) return res.status(404).json({ ok: false, error: "load not found" });
 
   const board = toNumber(load.loadboard_rate, 0);
-  const offer = toNumber(carrier_offer_usd, 0);
+  const rawOffer = toNumber(carrier_offer_usd, 0);
+  const offer = normalizeOffer(rawOffer, board);
 
   const minAccept = Math.round(board * 0.95);
   const walkAway = Math.round(board * 0.88);
@@ -264,7 +279,7 @@ app.post("/negotiate", (req, res) => {
     price = walkAway;
   }
 
-  return res.json({ ok: true, decision, price, notes: { board, minAccept, walkAway } });
+  return res.json({ ok: true, decision, price, notes: { board, minAccept, walkAway, rawOffer } });
 });
 
 /**

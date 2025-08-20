@@ -9,7 +9,10 @@
     "loadboard_rate": 2200,
     "notes": "No pallets exchange",
     "weight": "38000 lb",
-    "commodity_type": "Paper goods"
+    "commodity_type": "Paper goods",
+    "num_of_pieces": 26,
+    "miles": 780,
+    "dimensions": "48x40x60 in per pallet"
   },
   {
     "load_id": "L-1002",
@@ -21,6 +24,9 @@
     "loadboard_rate": 2600,
     "notes": "No lumper",
     "weight": "42000 lb",
-    "commodity_type": "Frozen food"
+    "commodity_type": "Frozen food",
+    "num_of_pieces": 20,
+    "miles": 880,
+    "dimensions": "48x40x55 in per pallet"
   }
 ]
