@@ -1,0 +1,26 @@
+[
+  {
+    "load_id": "L-1001",
+    "origin": "Dallas, TX",
+    "destination": "Atlanta, GA",
+    "pickup_datetime": "2025-08-22T09:00:00-05:00",
+    "delivery_datetime": "2025-08-23T17:00:00-04:00",
+    "equipment_type": "Dry Van",
+    "loadboard_rate": 2200,
+    "notes": "No pallets exchange",
+    "weight": "38000 lb",
+    "commodity_type": "Paper goods"
+  },
+  {
+    "load_id": "L-1002",
+    "origin": "Houston, TX",
+    "destination": "Jacksonville, FL",
+    "pickup_datetime": "2025-08-22T08:00:00-05:00",
+    "delivery_datetime": "2025-08-23T18:00:00-04:00",
+    "equipment_type": "Reefer",
+    "loadboard_rate": 2600,
+    "notes": "No lumper",
+    "weight": "42000 lb",
+    "commodity_type": "Frozen food"
+  }
+]
