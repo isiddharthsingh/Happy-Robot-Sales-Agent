@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Carrier Sales – Metrics</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
+  <style>
+    :root{--bg:#0f172a;--card:#111827;--muted:#94a3b8;--text:#e5e7eb;}
+    *{box-sizing:border-box} html,body{height:100%}
+    body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial;background:var(--bg);color:var(--text)}
+    .wrap{max-width:1280px;margin:0 auto;padding:24px}
+    .row{display:grid;gap:16px}
+    .row.cols-3{grid-template-columns:repeat(3,minmax(0,1fr))}
+    .row.cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}
+    .card{background:var(--card);border:1px solid #1f2937;border-radius:16px;padding:16px}
+    .title{font-weight:600;margin:0 0 8px}
+    .muted{color:var(--muted);font-size:12px}
+    .controls{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
+    .controls input{background:#0b1220;border:1px solid #1f2937;border-radius:12px;color:var(--text);padding:10px 12px;min-width:280px}
+    .controls button,.controls label{background:#0b1220;border:1px solid #1f2937;border-radius:12px;padding:10px 12px;color:var(--text);cursor:pointer}
+    .pill{display:inline-block;background:#0b1220;border:1px solid #1f2937;border-radius:999px;padding:4px 10px;font-size:12px}
+    table{width:100%;border-collapse:collapse}
+    th,td{border-bottom:1px solid #1f2937;padding:10px 8px;text-align:left;font-size:14px}
+    th{color:#9ca3af;font-weight:600}
+    .kpi{font-size:28px;font-weight:600}
+    .small{font-size:12px}
+    .nowrap{white-space:nowrap}
+    .code{font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;font-size:12px}
+  </style>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <div class="wrap">
+    <h1 class="title" style="font-size:22px">Carrier Sales — Metrics</h1>
+
+    <!-- Controls -->
+    <div class="controls card">
+      <input id="baseUrl" placeholder="Base URL (e.g., https://your-ngrok.ngrok-free.app)" />
+      <input id="apiKey"  placeholder="API key (x-api-key)" />
+      <button id="saveCfg">Save</button>
+      <button id="refreshBtn">Refresh</button>
+      <label class="small"><input type="checkbox" id="autoRefresh" /> Auto-refresh (30s)</label>
+      <span class="muted">Last updated <span id="updatedAt" class="pill">–</span></span>
+    </div>
+
+    <!-- KPIs row 1 -->
+    <div class="row cols-3">
+      <div class="card">
+        <div class="muted">Total calls</div>
+        <div class="kpi" id="kpiCalls">–</div>
+      </div>
+      <div class="card">
+        <div class="muted">Booked % (Accepted/Transferred)</div>
+        <div class="kpi" id="kpiBookedPct">–</div>
+      </div>
+      <div class="card">
+        <div class="muted">Avg RPM (booked)</div>
+        <div class="kpi" id="kpiAvgRpm">–</div>
+      </div>
+    </div>
+
+    <!-- KPIs row 2 -->
+    <div class="row cols-3" style="margin-top:16px">
+      <div class="card">
+        <div class="muted">Top outcome</div>
+        <div class="kpi" id="kpiTopOutcome">–</div>
+      </div>
+      <div class="card">
+        <div class="muted">Avg discount vs list (booked)</div>
+        <div class="kpi" id="kpiAvgDisc">–</div>
+      </div>
+      <div class="card">
+        <div class="muted">Top lane (recent)</div>
+        <div class="kpi" id="kpiTopLane">–</div>
+      </div>
+    </div>
+
+    <!-- Charts row 1 -->
+    <div class="row cols-2" style="margin-top:16px">
+      <div class="card">
+        <div class="title">Outcomes</div>
+        <canvas id="outcomeChart" height="220"></canvas>
+      </div>
+      <div class="card">
+        <div class="title">Sentiment</div>
+        <canvas id="sentimentChart" height="220"></canvas>
+      </div>
+    </div>
+
+    <!-- Charts row 2 -->
+    <div class="row cols-2" style="margin-top:16px">
+      <div class="card">
+        <div class="title">Top lanes (recent)</div>
+        <canvas id="laneChart" height="240"></canvas>
+      </div>
+      <div class="card">
+        <div class="title">Negotiation rounds (recent)</div>
+        <canvas id="roundsChart" height="240"></canvas>
+      </div>
+    </div>
+
+    <!-- Last 10 calls -->
+    <div class="card" style="margin-top:16px">
+      <div class="title">Last 10 calls</div>
+      <table id="last10">
+        <thead>
+          <tr>
+            <th class="nowrap">When</th>
+            <th>Outcome</th>
+            <th>Sentiment</th>
+            <th>Lane</th>
+            <th>Listed → Agreed</th>
+            <th>RPM</th>
+            <th>Rounds</th>
+            <th>Call ID</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+      <div class="muted small">Tip: open your Workflow “Runs” to see full transcripts.</div>
+    </div>
+  </div>
+
+<script>
+const $ = id => document.getElementById(id);
+const state = { charts:{} };
+
+function loadCfg(){
+  $('baseUrl').value = localStorage.getItem('metrics_baseUrl') || location.origin;
+  $('apiKey').value  = localStorage.getItem('metrics_apiKey')  || '';
+  $('autoRefresh').checked = localStorage.getItem('metrics_auto') === '1';
+}
+function saveCfg(){
+  localStorage.setItem('metrics_baseUrl', $('baseUrl').value.trim());
+  localStorage.setItem('metrics_apiKey',  $('apiKey').value.trim());
+  localStorage.setItem('metrics_auto',    $('autoRefresh').checked ? '1' : '0');
+}
+$('saveCfg').onclick = () => { saveCfg(); refresh(); };
+$('refreshBtn').onclick = refresh;
+$('autoRefresh').onchange = () => { saveCfg(); setupAuto(); };
+
+let timer=null;
+function setupAuto(){ if(timer) clearInterval(timer); if($('autoRefresh').checked) timer=setInterval(refresh,30000); }
+
+function parseNum(v){
+  if(v===null||v===undefined) return NaN;
+  const n = Number(String(v).replace(/[^\d.-]/g,''));
+  return Number.isFinite(n) ? n : NaN;
+}
+function usdc(n){ return Number.isFinite(n) ? `$${n.toLocaleString()}` : '–'; }
+function pct(n){ return Number.isFinite(n) ? `${Math.round(n)}%` : '–'; }
+function rpm(agreed, miles){
+  const a = parseNum(agreed), m = parseNum(miles);
+  if(!Number.isFinite(a) || !Number.isFinite(m) || m<=0) return NaN;
+  return Math.round((a/m)*100)/100;
+}
+function booked(outcome){
+  const o = String(outcome||'').toLowerCase();
+  return o==='accepted' || o==='transferred';
+}
+
+async function getMetrics(){
+  const base = $('baseUrl').value.trim().replace(/\/+$/,'');
+  const key  = $('apiKey').value.trim();
+  if(!base||!key) throw new Error('Set Base URL and API key, then Save.');
+  const r = await fetch(`${base}/metrics/local`, { headers:{'x-api-key':key}});
+  if(!r.ok) throw new Error(`metrics/local ${r.status}`);
+  return r.json();
+}
+
+function drawDoughnut(id, labels, data){
+  const ctx = $(id).getContext('2d');
+  if(state.charts[id]) state.charts[id].destroy();
+  state.charts[id] = new Chart(ctx, {
+    type:'doughnut',
+    data:{ labels, datasets:[{ data }] },
+    options:{ plugins:{ legend:{ position:'bottom', labels:{ color:'#e5e7eb' }}}}
+  });
+}
+
+function drawBar(id, labels, data){
+  const ctx = $(id).getContext('2d');
+  if(state.charts[id]) state.charts[id].destroy();
+  state.charts[id] = new Chart(ctx, {
+    type:'bar',
+    data:{ labels, datasets:[{ data }] },
+    options:{
+      scales:{
+        x:{ ticks:{ color:'#e5e7eb' } },
+        y:{ ticks:{ color:'#e5e7eb' }, beginAtZero:true, precision:0 }
+      },
+      plugins:{ legend:{ display:false } }
+    }
+  });
+}
+
+function renderTable(rows){
+  const tb = $('last10').querySelector('tbody');
+  tb.innerHTML='';
+  rows.forEach(r=>{
+    const lane = [r.origin, r.destination].filter(Boolean).join(' → ') || '–';
+    const listed = parseNum(r.listed_rate);
+    const agreed = parseNum(r.agreed_price);
+    const rpmVal = rpm(agreed, r.miles);
+    const rounds = parseNum(r.negotiation_rounds ?? r.negotiation_round);
+    const priceStr = Number.isFinite(listed)||Number.isFinite(agreed)
+      ? `${usdc(listed)} → ${usdc(agreed)}`
+      : '–';
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td class="nowrap">${new Date(r.at).toLocaleString()}</td>
+      <td>${r.outcome||'-'}</td>
+      <td>${r.sentiment||'-'}</td>
+      <td>${lane}</td>
+      <td>${priceStr}</td>
+      <td>${Number.isFinite(rpmVal) ? `$${rpmVal.toFixed(2)}` : '–'}</td>
+      <td>${Number.isFinite(rounds)? rounds : '-'}</td>
+      <td class="code">${(r.call_id||'').slice(0,18)}…</td>
+    `;
+    tb.appendChild(tr);
+  });
+}
+
+function topEntry(obj){
+  const e = Object.entries(obj||{}).sort((a,b)=>b[1]-a[1])[0];
+  return e ? e[0] : '–';
+}
+
+async function refresh(){
+  try{
+    const data = await getMetrics();
+    $('updatedAt').textContent = new Date().toLocaleTimeString();
+
+    // ---- KPIs from summary buckets
+    const totalCalls = data.totals?.calls ?? 0;
+    $('kpiCalls').textContent = totalCalls;
+
+    const byOutcome = data.byOutcome || {};
+    $('kpiTopOutcome').textContent = topEntry(byOutcome);
+
+    const totalForPct = Object.values(byOutcome).reduce((a,b)=>a+b,0) || totalCalls;
+    const bookedCount =
+      (byOutcome.Accepted||0) + (byOutcome.Transferred||0);
+    $('kpiBookedPct').textContent = pct((bookedCount/Math.max(1,totalForPct))*100);
+
+    // ---- KPIs computed from last10 records (recency-focused)
+    const rows = data.last10 || [];
+
+    // Average RPM (booked only)
+    const rpms = rows
+      .filter(r=>booked(r.outcome))
+      .map(r=>rpm(parseNum(r.agreed_price), parseNum(r.miles)))
+      .filter(Number.isFinite);
+    const avgRpm = rpms.length ? (rpms.reduce((a,b)=>a+b,0)/rpms.length) : NaN;
+    $('kpiAvgRpm').textContent = Number.isFinite(avgRpm) ? `$${avgRpm.toFixed(2)}` : '–';
+
+    // Avg discount vs list (booked only)
+    const discounts = rows
+      .filter(r=>booked(r.outcome))
+      .map(r=>{
+        const a = parseNum(r.agreed_price), l = parseNum(r.listed_rate);
+        if(!Number.isFinite(a)||!Number.isFinite(l)||l<=0) return NaN;
+        return (1 - a/l) * 100; // percent under list
+      })
+      .filter(Number.isFinite);
+    const avgDisc = discounts.length ? (discounts.reduce((a,b)=>a+b,0)/discounts.length) : NaN;
+    $('kpiAvgDisc').textContent = Number.isFinite(avgDisc) ? `${avgDisc.toFixed(1)}%` : '–';
+
+    // Top lane (recent)
+    const laneCounts = {};
+    rows.forEach(r=>{
+      const lane = [r.origin, r.destination].filter(Boolean).join(' → ');
+      if(!lane) return;
+      laneCounts[lane] = (laneCounts[lane]||0) + 1;
+    });
+    $('kpiTopLane').textContent = topEntry(laneCounts);
+
+    // ---- Charts
+    // Outcomes
+    const oLabels = Object.keys(byOutcome), oData = oLabels.map(k=>byOutcome[k]);
+    drawDoughnut('outcomeChart', oLabels, oData);
+
+    // Sentiment
+    const sObj = data.bySentiment || {};
+    const sLabels = Object.keys(sObj), sData = sLabels.map(k=>sObj[k]);
+    drawDoughnut('sentimentChart', sLabels, sData);
+
+    // Top lanes (bar, top 8)
+    const sortedLanes = Object.entries(laneCounts).sort((a,b)=>b[1]-a[1]).slice(0,8);
+    drawBar('laneChart', sortedLanes.map(x=>x[0]), sortedLanes.map(x=>x[1]));
+
+    // Negotiation rounds distribution (bar)
+    const roundsCounts = {};
+    rows.forEach(r=>{
+      const n = parseNum(r.negotiation_rounds ?? r.negotiation_round);
+      if(!Number.isFinite(n)) return;
+      roundsCounts[n] = (roundsCounts[n]||0) + 1;
+    });
+    const roundPairs = Object.entries(roundsCounts).sort((a,b)=>Number(a[0])-Number(b[0]));
+    drawBar('roundsChart', roundPairs.map(p=>p[0]), roundPairs.map(p=>p[1]));
+
+    // Table
+    renderTable(rows);
+  }catch(e){
+    alert(e.message);
+  }
+}
+
+// boot
+loadCfg();
+setupAuto();
+refresh();
+</script>
+</body>
+</html>

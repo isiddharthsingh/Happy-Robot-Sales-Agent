@@ -136,6 +136,12 @@ function equipMatch(a = "", b = "") {
   return na === nb;
 }
 
+// serve the dashboard static files
+app.use(express.static(path.join(__dirname, "public")));
+app.get("/dashboard", (_req, res) =>
+  res.sendFile(path.join(__dirname, "public", "dashboard.html"))
+);
+
 // ---------- API key auth middleware ----------
 function extractApiKey(req) {
   const h = req.headers || {};
