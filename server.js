@@ -7,7 +7,7 @@ import express from "express";
 import cors from "cors";
 import morgan from "morgan";
 import { fileURLToPath } from "url";
-import { randomUUID } from "node:crypto";
+import { randomUUID, timingSafeEqual } from "node:crypto";
 import "dotenv/config";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -17,6 +17,12 @@ const __dirname = path.dirname(__filename);
 const PORT = Number(process.env.PORT || 8080);
 const FMCSA_WEBKEY = process.env.FMCSA_WEBKEY || "";
 const DEBUG = String(process.env.DEBUG || "false").toLowerCase() === "true";
+
+// API keys (comma separated)
+const API_KEYS = (process.env.API_KEYS || process.env.API_KEY || "")
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
 
 // ---------- app ----------
 const app = express();
@@ -130,10 +136,43 @@ function equipMatch(a = "", b = "") {
   return na === nb;
 }
 
+// ---------- API key auth middleware ----------
+function extractApiKey(req) {
+  const h = req.headers || {};
+  if (h["x-api-key"]) return String(h["x-api-key"]);
+  if (h.authorization && /^bearer\s+/i.test(h.authorization)) {
+    return h.authorization.replace(/^bearer\s+/i, "").trim();
+  }
+  if (req.query?.api_key) return String(req.query.api_key);
+  return "";
+}
+function safeEqual(a, b) {
+  try {
+    const ab = Buffer.from(String(a));
+    const bb = Buffer.from(String(b));
+    if (ab.length !== bb.length) return false;
+    return timingSafeEqual(ab, bb);
+  } catch {
+    return false;
+  }
+}
+function requireApiKey(req, res, next) {
+  const key = extractApiKey(req);
+  if (!API_KEYS.length) {
+    return res.status(500).json({ ok: false, error: "server not configured with API_KEYS" });
+  }
+  const ok = API_KEYS.some((k) => safeEqual(k, key));
+  if (!ok) return res.status(401).json({ ok: false, error: "unauthorized" });
+  next();
+}
+
+// Apply auth to every route
+app.use(requireApiKey);
+
 // ---------- routes ----------
 
 app.get("/health", (req, res) => {
-  return res.json({ ok: true, status: "up", version: "1.3.0" });
+  return res.json({ ok: true, status: "up", version: "1.4.0" });
 });
 
 /**
