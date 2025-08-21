@@ -7,23 +7,23 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap" rel="stylesheet">
   <style>
-    :root{--bg:#0f172a;--card:#111827;--muted:#94a3b8;--text:#e5e7eb;}
+    :root{--bg:#f8fafc;--card:#ffffff;--muted:#6b7280;--text:#111827;}
     *{box-sizing:border-box} html,body{height:100%}
     body{margin:0;font-family:Inter,system-ui,-apple-system,Segoe UI,Roboto,Arial;background:var(--bg);color:var(--text)}
     .wrap{max-width:1280px;margin:0 auto;padding:24px}
     .row{display:grid;gap:16px}
     .row.cols-3{grid-template-columns:repeat(3,minmax(0,1fr))}
     .row.cols-2{grid-template-columns:repeat(2,minmax(0,1fr))}
-    .card{background:var(--card);border:1px solid #1f2937;border-radius:16px;padding:16px}
+    .card{background:var(--card);border:1px solid #e5e7eb;border-radius:16px;padding:16px}
     .title{font-weight:600;margin:0 0 8px}
     .muted{color:var(--muted);font-size:12px}
     .controls{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px}
-    .controls input{background:#0b1220;border:1px solid #1f2937;border-radius:12px;color:var(--text);padding:10px 12px;min-width:280px}
-    .controls button,.controls label{background:#0b1220;border:1px solid #1f2937;border-radius:12px;padding:10px 12px;color:var(--text);cursor:pointer}
-    .pill{display:inline-block;background:#0b1220;border:1px solid #1f2937;border-radius:999px;padding:4px 10px;font-size:12px}
+    .controls input{background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;color:var(--text);padding:10px 12px;min-width:280px}
+    .controls button,.controls label{background:#ffffff;border:1px solid #e5e7eb;border-radius:12px;padding:10px 12px;color:var(--text);cursor:pointer}
+    .pill{display:inline-block;background:#f3f4f6;border:1px solid #e5e7eb;border-radius:999px;padding:4px 10px;font-size:12px}
     table{width:100%;border-collapse:collapse}
-    th,td{border-bottom:1px solid #1f2937;padding:10px 8px;text-align:left;font-size:14px}
-    th{color:#9ca3af;font-weight:600}
+    th,td{border-bottom:1px solid #e5e7eb;padding:10px 8px;text-align:left;font-size:14px}
+    th{color:#6b7280;font-weight:600}
     .kpi{font-size:28px;font-weight:600}
     .small{font-size:12px}
     .nowrap{white-space:nowrap}
@@ -176,7 +176,7 @@ function drawDoughnut(id, labels, data){
   state.charts[id] = new Chart(ctx, {
     type:'doughnut',
     data:{ labels, datasets:[{ data }] },
-    options:{ plugins:{ legend:{ position:'bottom', labels:{ color:'#e5e7eb' }}}}
+    options:{ plugins:{ legend:{ position:'bottom', labels:{ color:'#111827' }}}}
   });
 }
 
@@ -188,8 +188,8 @@ function drawBar(id, labels, data){
     data:{ labels, datasets:[{ data }] },
     options:{
       scales:{
-        x:{ ticks:{ color:'#e5e7eb' } },
-        y:{ ticks:{ color:'#e5e7eb' }, beginAtZero:true, precision:0 }
+        x:{ ticks:{ color:'#111827' } },
+        y:{ ticks:{ color:'#111827' }, beginAtZero:true, precision:0 }
       },
       plugins:{ legend:{ display:false } }
     }
