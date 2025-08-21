@@ -31,7 +31,3 @@ logs/
 *.log
 *.pid
 *.seed
-
-# App data (keep seed file)
-data/*.json
-!data/loads.sample.json

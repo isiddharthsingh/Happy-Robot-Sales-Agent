@@ -1,0 +1,15 @@
+# Environment files
+.env
+.env.*
+.env.local
+.env.production
+
+# Node modules
+node_modules/
+
+# Runtime data 
+data/callbacks.json
+
+# OS files
+.DS_Store
+.git/
